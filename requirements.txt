@@ -1,0 +1,11 @@
+openai
+python-dotenv
+spider-client
+websockets
+asyncio
+requests
+pdfminer.six
+bs4
+fastapi
+python-multipart
+uvicorn
