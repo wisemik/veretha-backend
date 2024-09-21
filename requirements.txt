@@ -13,3 +13,6 @@ sqlalchemy
 passlib
 email-validator
 bcrypt
+circle-developer-controlled-wallets
+circle-smart-contract-platform
+circle-user-controlled-wallets
