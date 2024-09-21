@@ -1,3 +1,4 @@
 .idea/
 .env__pycache__/
 *.pyc
+test.db

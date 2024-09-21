@@ -22,7 +22,7 @@ def create_transfer(from_wallet_id: str, amount: str, destination_address: str) 
     #generate new uuid for idempotency key
     idempotencyKey = uuid.uuid4()
 
-    print(idempotencyKey)
+    # print(idempotencyKey)
 
     payload = {
         "idempotencyKey": str(idempotencyKey),
@@ -43,7 +43,7 @@ def create_transfer(from_wallet_id: str, amount: str, destination_address: str) 
 
     response = requests.post(url, json=payload, headers=headers)
 
-    print(response.text)
+    # print(response.text)
 
     return response.json().get('data').get('id')
 
@@ -51,25 +51,25 @@ def create_transfer(from_wallet_id: str, amount: str, destination_address: str) 
 
 def create_wallet(email, name, ref_id):
     # Starting the wallet creation process
-    print("Starting the wallet creation process...")
+    # print("Starting the wallet creation process...")
 
     # Generate entity secret
     entitySecretCipherText = generate_entity_secret()
-    print(f"Generated entity secret: {entitySecretCipherText}")
+    # print(f"Generated entity secret: {entitySecretCipherText}")
 
     # Generate idempotency key
     idempotencyKey = uuid.uuid4()
-    print(f"Generated idempotencyKey: {idempotencyKey}")
+    # print(f"Generated idempotencyKey: {idempotencyKey}")
 
     # Get API key from environment
     api_key = os.getenv('CIRCLE_API_KEY')
     if not api_key:
         print("Error: CIRCLE_API_KEY is not set in the environment!")
         return
-    print(f"Using API key: {api_key}")
+    # print(f"Using API key: {api_key}")
 
     # Initialize developer-controlled wallets client
-    print("Initializing developer-controlled wallets client...")
+    # print("Initializing developer-controlled wallets client...")
     client = utils.init_developer_controlled_wallets_client(
         api_key=api_key,
         entity_secret=os.getenv("CIRCLE_HEX_ENCODED_ENTITY_SECRET_KEY")
@@ -90,7 +90,7 @@ def create_wallet(email, name, ref_id):
 
         # Extract the wallet set ID
         wallet_set_id = wallet_set.actual_instance.id
-        print(f"Created wallet set with ID: {wallet_set_id}")
+        # print(f"Created wallet set with ID: {wallet_set_id}")
 
 
         url = "https://api.circle.com/v1/w3s/developer/wallets"
@@ -118,7 +118,7 @@ def create_wallet(email, name, ref_id):
         }
 
         response = requests.request("POST", url, headers=headers, data=payload)
-        print(response.text)
+        # print(response.text)
         return response.json().get('data', {}).get('wallets', [])[0].get('id'), response.json().get('data', {}).get('wallets', [])[0].get('address')
 
 

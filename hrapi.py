@@ -13,7 +13,7 @@ import requests
 from sqlalchemy import Column, Integer, String, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from passlib.context import CryptContext
-
+import circle_veretha
 # Load environment variables from .env file
 load_dotenv()
 
@@ -41,14 +41,6 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-# Email verification table
-class Verification(Base):
-    __tablename__ = 'verifications'
-    id = Column(Integer, primary_key=True, index=True)
-    email_hash = Column(String, unique=True, index=True)  # Store hashed email
-    verified = Column(String, default="not")  # Can be 'not', 'device', or 'orb'
-
-
 # User table for registration
 class User(Base):
     __tablename__ = 'users'
@@ -62,20 +54,15 @@ class User(Base):
     country = Column(String)
     city = Column(String)
     linkedin_url = Column(String)
-
+    verified = Column(String, default="not")  # Can be 'not', 'device', or 'orb'
+    wallet_id = Column(String)
+    wallet_address = Column(String)
 
 # Create the tables in the database
 Base.metadata.create_all(bind=engine)
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-# Function to hash email
-def hash_email(email: str) -> str:
-    """Hash the email using SHA256."""
-    return hashlib.sha256(email.encode()).hexdigest()
-
 
 # Dependency to get DB session
 def get_db():
@@ -86,10 +73,10 @@ def get_db():
         db.close()
 
 
-# Pydantic model for email verification update
-class EmailVerificationUpdate(BaseModel):
-    email: EmailStr
-    verification_status: str
+def generate_wallet_id_and_address(email: str):
+    """Generate wallet_id and wallet_address using the email as a base."""
+    wallet_id, wallet_address = circle_veretha.create_wallet(email, email, email)
+    return wallet_id, wallet_address
 
 
 # Pydantic model for user registration
@@ -103,6 +90,7 @@ class UserCreate(BaseModel):
     country: str = ""
     city: str = ""
     linkedin_url: str = ""
+    verified: str = "not"
 
 
 # Register a new user
@@ -116,6 +104,8 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     # Hash the password
     hashed_password = pwd_context.hash(user.password)
 
+    wallet_id, wallet_address = generate_wallet_id_and_address(user.email)
+
     # Create new user entry
     new_user = User(
         email=user.email,
@@ -126,17 +116,16 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
         skills=user.skills,
         country=user.country,
         city=user.city,
-        linkedin_url=user.linkedin_url
+        linkedin_url=user.linkedin_url,
+        verified=user.verified,
+        wallet_id=wallet_id,
+        wallet_address=wallet_address
     )
     db.add(new_user)
     db.commit()
 
-    # Hash the email and store the verification status in the Verification table
-    email_hash = hash_email(user.email)
-    new_verification = Verification(email_hash=email_hash)
-    db.add(new_verification)
-    db.commit()
 
+    print(f"New user registered: {new_user.wallet_address}, {new_user.wallet_id}")
     return {
         "id": new_user.id,
         "email": new_user.email,
@@ -146,7 +135,35 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
         "skills": new_user.skills,
         "country": new_user.country,
         "city": new_user.city,
-        "linkedin_url": new_user.linkedin_url
+        "linkedin_url": new_user.linkedin_url,
+        "verified": new_user.verified,
+        "wallet_id": new_user.wallet_id,
+        "wallet_address": new_user.wallet_address
+    }
+
+@app.get("/get-profile/{email}")
+def get_profile(email: str, db: Session = Depends(get_db)):
+    # Find the user by email
+    db_user = db.query(User).filter(User.email == email).first()
+
+    # If user is not found, raise an error
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Return the user's profile details
+    return {
+        "id": db_user.id,
+        "email": db_user.email,
+        "full_name": db_user.full_name,
+        "occupation": db_user.occupation,
+        "company": db_user.company,
+        "skills": db_user.skills,
+        "country": db_user.country,
+        "city": db_user.city,
+        "linkedin_url": db_user.linkedin_url,
+        "verified": db_user.verified,
+        "wallet_id": db_user.wallet_id,
+        "wallet_address": db_user.wallet_address
     }
 
 class VerifyRequest(BaseModel):
@@ -189,44 +206,63 @@ async def verify(req_body: VerifyRequest):
         raise HTTPException(status_code=500, detail="Error communicating with World ID verification service.")
 
 # Set verification status
+# POST method to set the verification status
+
+class SetVerifiedModel(BaseModel):
+    email: EmailStr
+    verification_type: str  # 'device' or 'orb'
+
+
 @app.post("/set-verified")
-def set_verified(email_verification: EmailVerificationUpdate, db: Session = Depends(get_db)):
-    email_hash = hash_email(email_verification.email)
+def set_verified(data: SetVerifiedModel, db: Session = Depends(get_db)):
+    # Find the user by email
+    db_user = db.query(User).filter(User.email == data.email).first()
 
-    # Find the verification record for the email
-    db_verification = db.query(Verification).filter(Verification.email_hash == email_hash).first()
+    # If user is not found, raise an error
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-    # Update or create the verification record
-    if db_verification:
-        db_verification.verified = email_verification.verification_status
-    else:
-        new_verification = Verification(email_hash=email_hash, verified=email_verification.verification_status)
-        db.add(new_verification)
+    # Update the user's verification status
+    if data.verification_type not in ['device', 'orb']:
+        raise HTTPException(status_code=400, detail="Invalid verification type")
 
+    db_user.verified = data.verification_type
     db.commit()
-    return {
-        "message": f"Verification status for {email_verification.email} set to {email_verification.verification_status}"}
+    db.refresh(db_user)
+
+    return {"message": f"User {db_user.email} verification status updated to {db_user.verified}"}
 
 
-# Get verification status
-@app.get("/get-verified/{email}")
-def get_verified(email: str, db: Session = Depends(get_db)):
-    # Hash the email
-    email_hash = hash_email(email)
-
-    # Find the verification record for the email
-    db_verification = db.query(Verification).filter(Verification.email_hash == email_hash).first()
-
-    if not db_verification:
-        raise HTTPException(status_code=404, detail="Email not found")
-
-    return {"email": email, "verified": db_verification.verified}
 
 
 # Login method (for completeness)
 class UserAuth(BaseModel):
     email: EmailStr
     password: str
+
+
+@app.get("/get-profile/{email}")
+def get_profile(email: str, db: Session = Depends(get_db)):
+    # Find the user by email
+    db_user = db.query(User).filter(User.email == email).first()
+
+    # If user is not found, raise an error
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Return the user's profile details
+    return {
+        "id": db_user.id,
+        "email": db_user.email,
+        "full_name": db_user.full_name,
+        "occupation": db_user.occupation,
+        "company": db_user.company,
+        "skills": db_user.skills,
+        "country": db_user.country,
+        "city": db_user.city,
+        "linkedin_url": db_user.linkedin_url,
+        "wallet_address": db_user.wallet_address
+    }
 
 
 @app.post("/login")
@@ -247,7 +283,10 @@ def login_user(user: UserAuth, db: Session = Depends(get_db)):
         "skills": db_user.skills,
         "country": db_user.country,
         "city": db_user.city,
-        "linkedin_url": db_user.linkedin_url
+        "linkedin_url": db_user.linkedin_url,
+        "verified": db_user.verified,
+        "wallet_id": db_user.wallet_id,
+        "wallet_address": db_user.wallet_address
     }
 
 
