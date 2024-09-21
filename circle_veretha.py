@@ -119,7 +119,7 @@ def create_wallet(email, name, ref_id):
 
         response = requests.request("POST", url, headers=headers, data=payload)
         print(response.text)
-        return response.json().get('data', {}).get('id'), response.json().get('data', {}).get('address')
+        return response.json().get('data', {}).get('wallets', [])[0].get('id'), response.json().get('data', {}).get('wallets', [])[0].get('address')
 
 
     except Exception as e:
@@ -128,3 +128,4 @@ def create_wallet(email, name, ref_id):
 
 # Trigger wallet creation
 wallet_id, wallet_address = create_wallet("user@example.com", "23423", "3424")
+print(wallet_id, wallet_address)
