@@ -9,3 +9,7 @@ bs4
 fastapi
 python-multipart
 uvicorn
+sqlalchemy
+passlib
+email-validator
+bcrypt

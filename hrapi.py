@@ -1,4 +1,4 @@
-from fastapi import UploadFile, File, Form
+from fastapi import UploadFile, File, Form, HTTPException, Depends
 from pdfminer.high_level import extract_text
 import openai
 import uvicorn
@@ -7,8 +7,12 @@ from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
 import os
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 import requests
+from sqlalchemy import Column, Integer, String, create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from passlib.context import CryptContext
+from typing import Optional
 
 app = FastAPI()
 app.add_middleware(
@@ -23,6 +27,88 @@ load_dotenv()
 PROXYCURL_API_KEY = os.getenv('PROXYCURL_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 openai.api_key = OPENAI_API_KEY
+
+# Database setup
+Base = declarative_base()
+DATABASE_URL = "sqlite:///./test.db"
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
+    password = Column(String)
+    full_name = Column(String)
+    occupation = Column(String)
+    company = Column(String)
+    skills = Column(String)
+    country = Column(String)
+    city = Column(String)
+    linkedin_url = Column(String)
+
+
+Base.metadata.create_all(bind=engine)
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+    occupation: Optional[str] = None
+    company: Optional[str] = None
+    skills: Optional[str] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    linkedin_url: Optional[str] = None
+
+
+class UserAuth(BaseModel):
+    email: EmailStr
+    password: str
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@app.post("/register/")
+def register_user(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    hashed_password = pwd_context.hash(user.password)
+    new_user = User(
+        email=user.email,
+        password=hashed_password,
+        full_name=user.full_name,
+        occupation=user.occupation if user.occupation else "",
+        company=user.company if user.company else "",
+        skills=user.skills if user.skills else "",
+        country=user.country if user.country else "",
+        city=user.city if user.city else "",
+        linkedin_url=user.linkedin_url if user.linkedin_url else ""
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return {"user_id": new_user.id}
+
+
+@app.post("/login/")
+def login_user(user: UserAuth, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if not db_user or not pwd_context.verify(user.password, db_user.password):
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+    return {"user_id": db_user.id}
 
 
 class ScoreRequest(BaseModel):
@@ -103,22 +189,22 @@ async def extract_linkedin(linkedin_request: LinkedInRequest):
 
 def generate_prompt_messages(resume_text, job_description):
     prompt = f"""
-                   You are a career consultant helping candidates assess how well their resume matches a specific job vacancy. 
+                   You are a career consultant helping candidates assess how well their resume matches
+                    a specific job vacancy. 
                    You will be provided with the candidate's resume and the job description. 
                    Your task is to provide an objective evaluation of how well the resume fits the job requirements, 
                    give feedback, and offer suggestions on how the resume can be improved for a better match.
+                   Be critical, find the way to improve CV.
 
-                   Please provide the result in JSON format (only JSON!! without any additional symbols), containing the following fields:
-                   - "score": a string  (0-100) representing the match between the resume and the job description, where 0 - no match at all and 100 means a perfect match.
-                   - "description": a string containing feedback on how well the resume fits the job requirements (in English).
-                   - "details": a string containing suggestions for improving the resume to better match the job description. 
+                   Please provide the result in JSON format (only JSON!! without any additional symbols), containing the
+                    following fields:
+                   - "score": a string  (0-100) representing the match between the resume and the job description, where
+                    0 - no match at all and 100 means a absolutely perfect match.
+                   - "description": a string containing feedback on the score: why that score, and how well the resume
+                    fits the job requirements.
+                   - "details": a string containing html with suggestions for improving the resume to better match the
+                    job description in form of multiple suggestions. 
 
-                   Evaluation criteria:
-                   1) Experience requirements: Does your experience meet the job's requirements?
-                   2) Skills: Do your skills match the required competencies?
-                   3) Education: Do you have relevant education?
-                   4) Location: Does the job's location match your preferences?
-                   5) Other signals: How well do you fit into the company culture?
 
                    Candidate's resume: {resume_text}
                    Job description: {job_description}
