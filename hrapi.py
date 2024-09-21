@@ -79,7 +79,7 @@ def get_db():
         db.close()
 
 
-@app.post("/register/")
+@app.post("/register")
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
@@ -100,15 +100,38 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return {"user_id": new_user.id}
+    print(f"User {new_user.email} registered")
+    return {
+        "id": new_user.id,
+        "email": new_user.email,
+        "full_name": new_user.full_name,
+        "occupation": new_user.occupation,
+        "company": new_user.company,
+        "skills": new_user.skills,
+        "country": new_user.country,
+        "city": new_user.city,
+        "linkedin_url": new_user.linkedin_url
+    }
 
 
-@app.post("/login/")
+@app.post("/login")
 def login_user(user: UserAuth, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
     if not db_user or not pwd_context.verify(user.password, db_user.password):
         raise HTTPException(status_code=400, detail="Invalid credentials")
-    return {"user_id": db_user.id}
+    print(f"User {db_user.email} logged in")
+    return {
+        "id": db_user.id,
+        "email": db_user.email,
+        "full_name": db_user.full_name,
+        "occupation": db_user.occupation,
+        "company": db_user.company,
+        "skills": db_user.skills,
+        "country": db_user.country,
+        "city": db_user.city,
+        "linkedin_url": db_user.linkedin_url
+    }
+
 
 
 class ScoreRequest(BaseModel):
