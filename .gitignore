@@ -2,3 +2,5 @@
 .env__pycache__/
 *.pyc
 test.db
+.env
+.DS_Store

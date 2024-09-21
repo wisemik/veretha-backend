@@ -48,6 +48,34 @@ def create_transfer(from_wallet_id: str, amount: str, destination_address: str) 
     return response.json().get('data').get('id')
 
 
+def wallet_balance(wallet_id: str) -> str:
+    api_key = os.getenv('CIRCLE_API_KEY')
+
+    url = f"https://api.circle.com/v1/w3s/wallets/{wallet_id}/balances"
+    headers = {
+        "Authorization": f"Bearer {api_key}",  # Using the API key for authentication
+        "Content-Type": "application/json"  # Ensuring the payload is sent as JSON
+    }
+    response = requests.request("GET", url, headers=headers)
+
+    # Parse the response to get the amount
+    try:
+        data = response.json()
+        token_balances = data.get("data", {}).get("tokenBalances", [])
+
+        if token_balances:
+            # Assuming we want to extract the first token balance
+            token_balance = token_balances[0]
+            token_amount = token_balance.get("amount", "0")  # Default to 0 if amount is missing
+            print(f"Token amount: {token_amount}")
+            return token_amount
+        else:
+            print("No token balances found.")
+            return "0"
+    except Exception as e:
+        print(f"Error parsing wallet balance: {e}")
+        return "0"
+
 
 def create_wallet(email, name, ref_id):
     # Starting the wallet creation process
@@ -127,5 +155,7 @@ def create_wallet(email, name, ref_id):
 
 
 # Trigger wallet creation
-wallet_id, wallet_address = create_wallet("user@example.com", "23423", "3424")
-print(wallet_id, wallet_address)
+# wallet_id, wallet_address = create_wallet("user@example.com", "23423", "3424")
+# print(wallet_id, wallet_address)
+# f89bfdb1-ccf3-517a-8046-12cffeb406de
+print(wallet_balance("f89bfdb1-ccf3-517a-8046-12cffeb406de"))
